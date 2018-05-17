@@ -16,11 +16,11 @@ from flask import make_response
 import requests
 
 
-CLIENT_ID = json.loads(
-    open('client_secrets.json', 'r').read())['web']['client_id']
-
 app = Flask(__name__)
 
+CLIENT_ID = json.loads(
+    open('client_secrets.json', 'r').read())['web']['client_id']
+APPLICATION_NAME = "Restaurant Menu Application"
 
 # Connect to Database and create database session
 
@@ -34,16 +34,16 @@ session = DBSession()
 # Create a state token to prevent request forgery.
 # Store it in the session for later validation.
 
-@app.route('/login')
+@app.route('/login/')
 def showLogin():
     state = ''.join(random.choice(
         string.ascii_uppercase +
-        string.digits) for x in xrange(32))
+        string.digits) for x in range(32))
     login_session['state'] = state
     return render_template('login.html', STATE=state)
 
 
-@app.route('/gconnect', methods=['POST'])
+@app.route('/gconnect/', methods=['POST'])
 def gconnect():
     if request.args.get('state') != login_session['state']:
         response = make_response(
@@ -51,6 +51,7 @@ def gconnect():
         response.headers['Content-Type'] = 'application/json'
         return response
     code = request.data
+
     try:
         # Upgrade the authorization code into a credentials object
         oauth_flow = flow_from_clientsecrets(
@@ -87,8 +88,8 @@ def gconnect():
         response = make_response(
             json.dumps(
                 "Token's client ID does not match apps."), 401)
-        print "Token's client ID does not match app's."
-        respone.headers['Content-Type'] = 'applicaiton/json'
+        print("Token's client ID does not match app's.")
+        response.headers['Content-Type'] = 'applicaiton/json'
         return response
     # Check to see if user is already logged in
     stored_credentials = login_session.get('credentials')
@@ -105,7 +106,7 @@ def gconnect():
 
     # Get user info
     userinfo_url = "https://www.googleapis.com/oauth2/v1/userinfo"
-    params = {'access_token': credentials.access_token, 'alt':'json'}
+    params = {'access_token': credentials.access_token, 'alt': 'json'}
     answer = requests.get(userinfo_url, params=params)
     data = json.loads(answer.text)
 
@@ -123,6 +124,35 @@ def gconnect():
     flash("You are now logged in as %s" % login_session['username'])
     return output
 
+
+# DISCONNECT - Revoke a current user's token and reset their login_session
+@app.route('/gdisconnect/')
+def gdisconnect():
+    credentials = login_session.get('credentials')
+    if credentials is None:
+        response = make_response(
+            json.dumps('Current user not connected.'), 401)
+        response.headers['Content-Type'] = 'application/json'
+        return response
+    # Execute HTTP GET request to revoke current token.
+    access_token = credentials.access_token
+    url = 'https://accounts.google.com/o/oauth/revoke?token=%s' % access_token
+    h = httplib2.Http()
+    result = h.request(url, 'GET')[0]
+
+    if result['status'] == '200':
+        # Reset the user's session
+        del login_session['credentials']
+        del login_session['gplus_id']
+        del login_session['username']
+        del login_session['email']
+        del login_session['picture']
+
+        response = make_response(
+            json.dumps(
+                'Successfully disconnected.'), 200)
+        response.headers['Content-Type'] = 'application/json'
+        return response
 
 
 # JSON APIs to view Restaurant Information
